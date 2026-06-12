@@ -1,0 +1,42 @@
+{
+  "span": 8.0,
+  "eave_height": 4.1,
+  "ridge_height": 5.35,
+  "frame_count": 3,
+  "bay_spacing": 4.0,
+  "show_secondary_members": false,
+  "roof_purlin_count": 7,
+  "wall_girt_count": 3,
+  "crane_beam_height": 2.85,
+  "pipe_brace_radius": 0.055,
+  "column_section": {
+    "depth": 0.5,
+    "flange_width": 0.42,
+    "flange_thickness": 0.075,
+    "web_thickness": 0.07
+  },
+  "rafter_section": {
+    "depth": 0.42,
+    "flange_width": 0.38,
+    "flange_thickness": 0.065,
+    "web_thickness": 0.06
+  },
+  "crane_beam_section": {
+    "depth": 0.34,
+    "flange_width": 0.24,
+    "flange_thickness": 0.055,
+    "web_thickness": 0.045
+  },
+  "purlin_section": {
+    "depth": 0.22,
+    "flange_width": 0.09,
+    "thickness": 0.025,
+    "lip": 0.045
+  },
+  "girt_section": {
+    "depth": 0.18,
+    "flange_width": 0.075,
+    "thickness": 0.022,
+    "lip": 0.035
+  }
+}
