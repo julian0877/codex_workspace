@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 
@@ -637,7 +638,6 @@ class LiftingLugApp(tk.Tk):
         table.style = "Table Grid"
         table.autofit = False
         headers = ["序号", "已知参数", "数值"]
-        widths = [900, 3900, 3600]
         for index, header in enumerate(headers):
             table.rows[0].cells[index].text = header
         for row in rows:
@@ -645,10 +645,10 @@ class LiftingLugApp(tk.Tk):
             cells[0].text = str(row[0])
             cells[1].text = str(row[1])
             cells[2].text = str(row[2])
+        LiftingLugApp.set_fixed_table_widths(table, [900, 3900, 3600])
         for row in table.rows:
-            for index, width in enumerate(widths):
-                row.cells[index].width = width
-                for paragraph in row.cells[index].paragraphs:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
                     for run in paragraph.runs:
                         run.font.name = "Microsoft YaHei"
                         run._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
@@ -657,6 +657,42 @@ class LiftingLugApp(tk.Tk):
                 for run in paragraph.runs:
                     run.bold = True
         document.add_paragraph()
+
+    @staticmethod
+    def set_fixed_table_widths(table, widths_dxa):
+        table_pr = table._tbl.tblPr
+        table_width = table_pr.find(qn("w:tblW"))
+        if table_width is None:
+            table_width = OxmlElement("w:tblW")
+            table_pr.append(table_width)
+        table_width.set(qn("w:type"), "dxa")
+        table_width.set(qn("w:w"), str(sum(widths_dxa)))
+
+        layout = table_pr.find(qn("w:tblLayout"))
+        if layout is None:
+            layout = OxmlElement("w:tblLayout")
+            table_pr.append(layout)
+        layout.set(qn("w:type"), "fixed")
+
+        existing_grid = table._tbl.tblGrid
+        if existing_grid is not None:
+            table._tbl.remove(existing_grid)
+        grid = OxmlElement("w:tblGrid")
+        for width in widths_dxa:
+            grid_col = OxmlElement("w:gridCol")
+            grid_col.set(qn("w:w"), str(width))
+            grid.append(grid_col)
+        table._tbl.insert(1, grid)
+
+        for row in table.rows:
+            for index, cell in enumerate(row.cells):
+                tc_pr = cell._tc.get_or_add_tcPr()
+                tc_width = tc_pr.find(qn("w:tcW"))
+                if tc_width is None:
+                    tc_width = OxmlElement("w:tcW")
+                    tc_pr.append(tc_width)
+                tc_width.set(qn("w:type"), "dxa")
+                tc_width.set(qn("w:w"), str(widths_dxa[index]))
 
     @staticmethod
     def add_check_text(document, title, formula_text, substitution_text, result_text):
