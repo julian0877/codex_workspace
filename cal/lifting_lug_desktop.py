@@ -8,7 +8,7 @@ from tkinter import filedialog, messagebox, ttk
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Inches, Pt
 
 
 @dataclass
@@ -18,6 +18,7 @@ class CheckResult:
     allowable: float
     unit: str
     expression: str
+    substitution: str = ""
 
     @property
     def ratio(self) -> float:
@@ -237,6 +238,7 @@ def calculate(data):
             strengths["tensile"],
             "N/mm2",
             "单片耳板力*1000/(t*净宽)",
+            f"{plate_force:.3f}*1000/({t:.3f}*{net_width:.3f})",
         ),
         CheckResult(
             "耳板端部抗拉劈开强度",
@@ -244,6 +246,7 @@ def calculate(data):
             strengths["tensile"],
             "N/mm2",
             "2*单片耳板力*1000/(t*a)",
+            f"2*{plate_force:.3f}*1000/({t:.3f}*{a:.3f})",
         ),
         CheckResult(
             "耳板抗剪强度",
@@ -251,6 +254,7 @@ def calculate(data):
             strengths["shear"],
             "N/mm2",
             "单片耳板力*1000/(t*Z)",
+            f"{plate_force:.3f}*1000/({t:.3f}*{z:.3f})",
         ),
         CheckResult(
             "耳板端部承压强度",
@@ -258,6 +262,7 @@ def calculate(data):
             strengths["bearing"],
             "N/mm2",
             "单片耳板力*1000/(d*(t+2*t1))",
+            f"{plate_force:.3f}*1000/({pin_diameter:.3f}*({t:.3f}+2*{t1:.3f}))",
         ),
     ]
 
@@ -274,6 +279,8 @@ def calculate(data):
             1.1 * strengths["tensile"],
             "N/mm2",
             "sqrt((sigma+sigma')^2+3*tau^2)",
+            f"sigma={normal_stress:.3f}, sigma'={bending_stress:.3f}, tau={shear_stress:.3f}; "
+            f"sqrt(({normal_stress:.3f}+{bending_stress:.3f})^2+3*{shear_stress:.3f}^2)",
         )
     )
 
@@ -294,6 +301,8 @@ def calculate(data):
             strengths["weld"],
             "N/mm2",
             "sqrt(((sigmaN+sigmaM)/beta)^2+tauV^2)",
+            f"sigmaN={weld_normal:.3f}, sigmaM={weld_bending:.3f}, tauV={weld_shear:.3f}, beta={beta:.3f}; "
+            f"sqrt((({weld_normal:.3f}+{weld_bending:.3f})/{beta:.3f})^2+{weld_shear:.3f}^2)",
         )
     )
 
@@ -316,8 +325,15 @@ def calculate(data):
         "connection_width": connection_width,
         "section_modulus": section_modulus,
         "moment": moment,
+        "normal_stress": normal_stress,
+        "shear_stress": shear_stress,
+        "bending_stress": bending_stress,
         "weld_length": weld_length,
         "weld_modulus": weld_modulus,
+        "weld_throat": weld_throat,
+        "weld_normal": weld_normal,
+        "weld_shear": weld_shear,
+        "weld_bending": weld_bending,
         "strengths": strengths,
         "edge_pass": edge_pass,
     }
@@ -536,12 +552,15 @@ class LiftingLugApp(tk.Tk):
         result_run = conclusion.add_run("满足要求" if all_passed else "不满足，请调整参数")
         result_run.bold = True
 
-        document.add_heading("一、输入参数", level=1)
-        labels = self.report_labels()
-        for index, (key, label) in enumerate(labels.items(), start=1):
-            self.add_numbered_text(document, f"{index}. {label} = {data[key]}")
+        document.add_heading("一、计算简图", level=1)
+        self.add_lug_diagram(document)
 
-        document.add_heading("二、主要中间量", level=1)
+        document.add_heading("二、输入参数", level=1)
+        labels = self.report_labels()
+        parameter_rows = [(index, label, data[key]) for index, (key, label) in enumerate(labels.items(), start=1)]
+        self.add_parameter_table(document, parameter_rows)
+
+        document.add_heading("三、主要中间量", level=1)
         derived_lines = [
             f"1. 吊点数量 n = {derived['lift_points']:.0f} 个；每吊点耳板片数 m = {derived['lug_plates_per_point']:.0f} 片。",
             f"2. 吊点钢丝绳拉力设计值 T3 = {derived['pull_force']:.3f} kN。",
@@ -551,25 +570,31 @@ class LiftingLugApp(tk.Tk):
             f"6. 销轴直径 d = {derived['pin_diameter']:.3f} mm；焊脚高度 hf = {derived['weld_size']:.3f} mm。",
             f"7. 耳板净距 a = {derived['edge_a']:.3f} mm，b = {derived['edge_b']:.3f} mm，端部宽度 Z = {derived['edge_z']:.3f} mm。",
             f"8. beff = {derived['beff']:.3f} mm；净宽 = {derived['net_width']:.3f} mm；焊缝计算长度 lw = {derived['weld_length']:.3f} mm。",
+            f"9. 连接处截面模量 W = {derived['section_modulus']:.3f} mm3；偏心弯矩 M = {derived['moment']:.3f} kN*m。",
+            f"10. 连接处正应力 sigma = {derived['normal_stress']:.3f} N/mm2；弯曲正应力 sigma' = {derived['bending_stress']:.3f} N/mm2；剪应力 tau = {derived['shear_stress']:.3f} N/mm2。",
+            f"11. 焊缝计算厚度 he = {derived['weld_throat']:.3f} mm；焊缝截面模量 W1 = {derived['weld_modulus']:.3f} mm3。",
+            f"12. 焊缝正应力 sigmaN = {derived['weld_normal']:.3f} N/mm2；焊缝弯曲正应力 sigmaM = {derived['weld_bending']:.3f} N/mm2；焊缝剪应力 tauV = {derived['weld_shear']:.3f} N/mm2。",
         ]
         for line in derived_lines:
             self.add_numbered_text(document, line)
 
-        document.add_heading("三、验算结果", level=1)
+        document.add_heading("四、验算结果", level=1)
         edge_result = "满足" if derived["edge_pass"] else "不满足"
         self.add_check_text(
             document,
-            "3.1 边距要求",
-            f"beff = {derived['beff']:.3f} mm，b = {derived['edge_b']:.3f} mm；"
+            "4.1 边距要求",
+            "判定式：beff <= b 且 a >= 4/3*beff。",
+            f"代入数值：beff = {derived['beff']:.3f} mm，b = {derived['edge_b']:.3f} mm；"
             f"a = {derived['edge_a']:.3f} mm，4/3*beff = {4 / 3 * derived['beff']:.3f} mm。",
-            f"判定条件为 beff <= b 且 a >= 4/3*beff，结论：{edge_result}。",
+            f"结论：{edge_result}。",
         )
         for index, item in enumerate(checks, start=2):
             result = "满足" if item.passed else "不满足"
             self.add_check_text(
                 document,
-                f"3.{index} {item.name}",
+                f"4.{index} {item.name}",
                 f"计算式：{item.expression}。",
+                f"代入数值：{item.substitution} = {item.actual:.3f} {item.unit}。",
                 f"计算值 = {item.actual:.3f} {item.unit}；允许值 = {item.allowable:.3f} {item.unit}；"
                 f"利用率 = {item.ratio:.3f}，结论：{result}。",
             )
@@ -581,6 +606,24 @@ class LiftingLugApp(tk.Tk):
         document.save(path)
 
     @staticmethod
+    def add_lug_diagram(document):
+        diagram_path = Path(__file__).resolve().parent / "assets" / "lifting_lug_diagram.png"
+        if not diagram_path.exists():
+            paragraph = document.add_paragraph()
+            paragraph.add_run("计算简图：").bold = True
+            paragraph.add_run("未找到内置简图文件 assets/lifting_lug_diagram.png。")
+            return
+
+        paragraph = document.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = paragraph.add_run()
+        run.add_picture(str(diagram_path), width=Inches(6.4))
+
+        caption = document.add_paragraph()
+        caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        caption.add_run("图 1  吊耳尺寸、受力及焊缝计算简图")
+
+    @staticmethod
     def add_numbered_text(document, text):
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.left_indent = Pt(18)
@@ -589,7 +632,34 @@ class LiftingLugApp(tk.Tk):
         paragraph.add_run(text)
 
     @staticmethod
-    def add_check_text(document, title, formula_text, result_text):
+    def add_parameter_table(document, rows):
+        table = document.add_table(rows=1, cols=3)
+        table.style = "Table Grid"
+        table.autofit = False
+        headers = ["序号", "已知参数", "数值"]
+        widths = [900, 3900, 3600]
+        for index, header in enumerate(headers):
+            table.rows[0].cells[index].text = header
+        for row in rows:
+            cells = table.add_row().cells
+            cells[0].text = str(row[0])
+            cells[1].text = str(row[1])
+            cells[2].text = str(row[2])
+        for row in table.rows:
+            for index, width in enumerate(widths):
+                row.cells[index].width = width
+                for paragraph in row.cells[index].paragraphs:
+                    for run in paragraph.runs:
+                        run.font.name = "Microsoft YaHei"
+                        run._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+        for cell in table.rows[0].cells:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.bold = True
+        document.add_paragraph()
+
+    @staticmethod
+    def add_check_text(document, title, formula_text, substitution_text, result_text):
         title_paragraph = document.add_paragraph()
         title_paragraph.paragraph_format.space_before = Pt(6)
         title_paragraph.paragraph_format.space_after = Pt(2)
@@ -600,6 +670,11 @@ class LiftingLugApp(tk.Tk):
         formula_paragraph.paragraph_format.left_indent = Pt(18)
         formula_paragraph.paragraph_format.space_after = Pt(2)
         formula_paragraph.add_run(formula_text)
+
+        substitution_paragraph = document.add_paragraph()
+        substitution_paragraph.paragraph_format.left_indent = Pt(18)
+        substitution_paragraph.paragraph_format.space_after = Pt(2)
+        substitution_paragraph.add_run(substitution_text)
 
         result_paragraph = document.add_paragraph()
         result_paragraph.paragraph_format.left_indent = Pt(18)
