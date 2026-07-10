@@ -538,52 +538,73 @@ class LiftingLugApp(tk.Tk):
 
         document.add_heading("一、输入参数", level=1)
         labels = self.report_labels()
-        parameter_rows = [(label, data[key]) for key, label in labels.items()]
-        self.add_table(document, ["项目", "数值"], parameter_rows, [4200, 4200])
+        for index, (key, label) in enumerate(labels.items(), start=1):
+            self.add_numbered_text(document, f"{index}. {label} = {data[key]}")
 
         document.add_heading("二、主要中间量", level=1)
-        derived_rows = [
-            ("吊点数量", f"{derived['lift_points']:.0f} 个"),
-            ("每吊点耳板片数", f"{derived['lug_plates_per_point']:.0f} 片"),
-            ("吊点 T3 拉力设计值", f"{derived['pull_force']:.3f} kN"),
-            ("吊点 T1 竖向分量", f"{derived['vertical_force']:.3f} kN"),
-            ("吊点 T2 水平分量", f"{derived['horizontal_force']:.3f} kN"),
-            ("单片耳板设计力", f"{derived['plate_force']:.3f} kN"),
-            ("单片耳板竖向分量", f"{derived['plate_vertical_force']:.3f} kN"),
-            ("单片耳板水平分量", f"{derived['plate_horizontal_force']:.3f} kN"),
-            ("销轴直径 d", f"{derived['pin_diameter']:.3f} mm"),
-            ("焊脚高度 hf", f"{derived['weld_size']:.3f} mm"),
-            ("a / b / Z", f"{derived['edge_a']:.3f} / {derived['edge_b']:.3f} / {derived['edge_z']:.3f} mm"),
-            ("beff / 净宽", f"{derived['beff']:.3f} / {derived['net_width']:.3f} mm"),
-            ("焊缝计算长度", f"{derived['weld_length']:.3f} mm"),
+        derived_lines = [
+            f"1. 吊点数量 n = {derived['lift_points']:.0f} 个；每吊点耳板片数 m = {derived['lug_plates_per_point']:.0f} 片。",
+            f"2. 吊点钢丝绳拉力设计值 T3 = {derived['pull_force']:.3f} kN。",
+            f"3. 吊点竖向分量 T1 = {derived['vertical_force']:.3f} kN；吊点水平分量 T2 = {derived['horizontal_force']:.3f} kN。",
+            f"4. 单片耳板设计力 N = T3 / m = {derived['plate_force']:.3f} kN。",
+            f"5. 单片耳板竖向分量 N1 = {derived['plate_vertical_force']:.3f} kN；单片耳板水平分量 N2 = {derived['plate_horizontal_force']:.3f} kN。",
+            f"6. 销轴直径 d = {derived['pin_diameter']:.3f} mm；焊脚高度 hf = {derived['weld_size']:.3f} mm。",
+            f"7. 耳板净距 a = {derived['edge_a']:.3f} mm，b = {derived['edge_b']:.3f} mm，端部宽度 Z = {derived['edge_z']:.3f} mm。",
+            f"8. beff = {derived['beff']:.3f} mm；净宽 = {derived['net_width']:.3f} mm；焊缝计算长度 lw = {derived['weld_length']:.3f} mm。",
         ]
-        self.add_table(document, ["项目", "计算值"], derived_rows, [4200, 4200])
+        for line in derived_lines:
+            self.add_numbered_text(document, line)
 
         document.add_heading("三、验算结果", level=1)
-        check_rows = [
-            (
-                "边距要求",
-                f"beff={derived['beff']:.3f} mm，a={derived['edge_a']:.3f} mm",
-                "beff<=b 且 a>=4/3*beff",
-                "满足" if derived["edge_pass"] else "不满足",
+        edge_result = "满足" if derived["edge_pass"] else "不满足"
+        self.add_check_text(
+            document,
+            "3.1 边距要求",
+            f"beff = {derived['beff']:.3f} mm，b = {derived['edge_b']:.3f} mm；"
+            f"a = {derived['edge_a']:.3f} mm，4/3*beff = {4 / 3 * derived['beff']:.3f} mm。",
+            f"判定条件为 beff <= b 且 a >= 4/3*beff，结论：{edge_result}。",
+        )
+        for index, item in enumerate(checks, start=2):
+            result = "满足" if item.passed else "不满足"
+            self.add_check_text(
+                document,
+                f"3.{index} {item.name}",
+                f"计算式：{item.expression}。",
+                f"计算值 = {item.actual:.3f} {item.unit}；允许值 = {item.allowable:.3f} {item.unit}；"
+                f"利用率 = {item.ratio:.3f}，结论：{result}。",
             )
-        ]
-        for item in checks:
-            check_rows.append(
-                (
-                    item.name,
-                    f"{item.actual:.3f} {item.unit}",
-                    f"允许值 {item.allowable:.3f} {item.unit}；利用率 {item.ratio:.3f}",
-                    "满足" if item.passed else "不满足",
-                )
-            )
-        self.add_table(document, ["验算项目", "计算值", "限值/利用率", "结论"], check_rows, [2900, 1900, 2600, 1000])
 
         note = document.add_paragraph()
         note.add_run("说明：").bold = True
         note.add_run("本计算书按当前程序内置公式生成，正式工程应用前应结合采用规范版本、设计条件和企业校审要求复核。")
 
         document.save(path)
+
+    @staticmethod
+    def add_numbered_text(document, text):
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.left_indent = Pt(18)
+        paragraph.paragraph_format.first_line_indent = Pt(-18)
+        paragraph.paragraph_format.space_after = Pt(4)
+        paragraph.add_run(text)
+
+    @staticmethod
+    def add_check_text(document, title, formula_text, result_text):
+        title_paragraph = document.add_paragraph()
+        title_paragraph.paragraph_format.space_before = Pt(6)
+        title_paragraph.paragraph_format.space_after = Pt(2)
+        title_run = title_paragraph.add_run(title)
+        title_run.bold = True
+
+        formula_paragraph = document.add_paragraph()
+        formula_paragraph.paragraph_format.left_indent = Pt(18)
+        formula_paragraph.paragraph_format.space_after = Pt(2)
+        formula_paragraph.add_run(formula_text)
+
+        result_paragraph = document.add_paragraph()
+        result_paragraph.paragraph_format.left_indent = Pt(18)
+        result_paragraph.paragraph_format.space_after = Pt(4)
+        result_paragraph.add_run(result_text)
 
     @staticmethod
     def configure_word_styles(document):
@@ -611,26 +632,6 @@ class LiftingLugApp(tk.Tk):
             "hole_diameter": "耳板孔径 d0(mm)",
             "weld_beta": "焊缝增大系数 beta",
         }
-
-    @staticmethod
-    def add_table(document, headers, rows, widths):
-        table = document.add_table(rows=1, cols=len(headers))
-        table.style = "Table Grid"
-        table.autofit = False
-        header_cells = table.rows[0].cells
-        for index, header in enumerate(headers):
-            header_cells[index].text = header
-            for paragraph in header_cells[index].paragraphs:
-                for run in paragraph.runs:
-                    run.bold = True
-        for row in rows:
-            cells = table.add_row().cells
-            for index, value in enumerate(row):
-                cells[index].text = str(value)
-        for row in table.rows:
-            for index, width in enumerate(widths):
-                row.cells[index].width = width
-        document.add_paragraph()
 
     def build_report(self, data, derived, checks, all_passed):
         lines = [
