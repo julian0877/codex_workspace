@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from datetime import datetime
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
 from lifting_calculations import (
     overturning_calculation,
     outrigger_reaction_calculation,
 )
+from word_report import CalculationReportSection, export_word_report
 
 
 InputSpec = tuple[str, str, str, float]
@@ -68,6 +71,27 @@ OUTRIGGER_RESULTS: list[ResultSpec] = [
     ("max_ground_pressure", "最大地面压强 P", "kPa"),
 ]
 
+OVERTURNING_FORMULAS = [
+    "W=20%*Q*g",
+    "MG=G*g*a+G1*g*(a+C)",
+    "MQ=-Q*g*(R-a)",
+    "MW=-W*H",
+    "M=KG*MG+KQ*MQ+KW*MW",
+]
+
+OUTRIGGER_FORMULAS = [
+    "F=(G0+G1+G2+G3)*g",
+    "M=G1*L1*g-G2*C*g+G3*E*g",
+    "beta=DEGREES(ATAN(B/2/D))",
+    "Mx=M*cos(beta)",
+    "My=M*sin(beta)",
+    "N1=D*F/2/A-Mx/2/A+My/2/B",
+    "N2=(A-D)*F/2/A+Mx/2/A+My/2/B",
+    "N3=D*F/2/A-Mx/2/A-My/2/B",
+    "N4=(A-D)*F/2/A+Mx/2/A-My/2/B",
+    "P=max(N1,N2,N3,N4)/S",
+]
+
 
 class CalculationPage(ttk.Frame):
     def __init__(
@@ -85,6 +109,7 @@ class CalculationPage(ttk.Frame):
         self.calculator = calculator
         self.entries: dict[str, ttk.Entry] = {}
         self.result_vars: dict[str, tk.StringVar] = {}
+        self.last_result: dict[str, object] = {}
 
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=1)
@@ -145,9 +170,25 @@ class CalculationPage(ttk.Frame):
             messagebox.showerror("输入错误", str(exc))
             return
 
+        self.last_result = result
         for key, _label, _unit in self.results:
             value = result[key]
             self.result_vars[key].set(self._format_value(value))
+
+    def report_inputs(self) -> dict[str, tuple[str, str]]:
+        values = self._read_inputs()
+        return {
+            label: (self._format_value(values[key]), unit)
+            for key, label, unit, _default in self.inputs
+        }
+
+    def report_results(self) -> dict[str, tuple[str, str]]:
+        result = self.calculator(**self._read_inputs())
+        self.last_result = result
+        return {
+            label: (self._format_value(result[key]), unit)
+            for key, label, unit in self.results
+        }
 
     @staticmethod
     def _format_value(value: object) -> str:
@@ -170,14 +211,14 @@ class LiftingCalculatorApp(tk.Tk):
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=12, pady=12)
 
-        overturning_page = CalculationPage(
+        self.overturning_page = CalculationPage(
             notebook,
             title="汽车吊抗倾覆验算",
             inputs=OVERTURNING_INPUTS,
             results=OVERTURNING_RESULTS,
             calculator=overturning_calculation,
         )
-        outrigger_page = CalculationPage(
+        self.outrigger_page = CalculationPage(
             notebook,
             title="汽车吊支腿反力计算",
             inputs=OUTRIGGER_INPUTS,
@@ -185,8 +226,52 @@ class LiftingCalculatorApp(tk.Tk):
             calculator=outrigger_reaction_calculation,
         )
 
-        notebook.add(overturning_page, text="汽车吊抗倾覆验算")
-        notebook.add(outrigger_page, text="汽车吊支腿反力计算")
+        notebook.add(self.overturning_page, text="汽车吊抗倾覆验算")
+        notebook.add(self.outrigger_page, text="汽车吊支腿反力计算")
+
+        action_bar = ttk.Frame(self, padding=(12, 0, 12, 12))
+        action_bar.pack(fill="x")
+        ttk.Button(
+            action_bar,
+            text="导出 Word 计算书",
+            command=self.export_current_report,
+        ).pack(side="right")
+
+    def export_current_report(self) -> None:
+        default_name = f"吊装相关验算计算书_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+        output_file = filedialog.asksaveasfilename(
+            title="保存 Word 计算书",
+            defaultextension=".docx",
+            initialfile=default_name,
+            filetypes=[("Word 文档", "*.docx")],
+        )
+        if not output_file:
+            return
+
+        try:
+            sections = [
+                CalculationReportSection(
+                    title="汽车吊抗倾覆验算",
+                    inputs=self.overturning_page.report_inputs(),
+                    formulas=OVERTURNING_FORMULAS,
+                    results=self.overturning_page.report_results(),
+                ),
+                CalculationReportSection(
+                    title="汽车吊支腿反力计算",
+                    inputs=self.outrigger_page.report_inputs(),
+                    formulas=OUTRIGGER_FORMULAS,
+                    results=self.outrigger_page.report_results(),
+                ),
+            ]
+            export_word_report(Path(output_file), sections)
+        except ValueError as exc:
+            messagebox.showerror("输入错误", str(exc))
+            return
+        except OSError as exc:
+            messagebox.showerror("导出失败", f"无法保存文件：{exc}")
+            return
+
+        messagebox.showinfo("导出完成", f"Word 计算书已保存：\n{output_file}")
 
 
 def main() -> None:
