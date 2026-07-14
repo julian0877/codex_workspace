@@ -20,6 +20,7 @@ class CheckResult:
     unit: str
     expression: str
     substitution: str = ""
+    word_formula: str = ""
 
     @property
     def ratio(self) -> float:
@@ -240,6 +241,7 @@ def calculate(data):
             "N/mm2",
             "单片耳板力*1000/(t*净宽)",
             f"{plate_force:.3f}*1000/({t:.3f}*{net_width:.3f})",
+            "σ = N/(t·b₁) ≤ f",
         ),
         CheckResult(
             "耳板端部抗拉劈开强度",
@@ -248,6 +250,7 @@ def calculate(data):
             "N/mm2",
             "2*单片耳板力*1000/(t*a)",
             f"2*{plate_force:.3f}*1000/({t:.3f}*{a:.3f})",
+            "σ = 2N/(t·a) ≤ f",
         ),
         CheckResult(
             "耳板抗剪强度",
@@ -256,6 +259,7 @@ def calculate(data):
             "N/mm2",
             "单片耳板力*1000/(t*Z)",
             f"{plate_force:.3f}*1000/({t:.3f}*{z:.3f})",
+            "τ = N/(t·Z) ≤ fᵥ",
         ),
         CheckResult(
             "耳板端部承压强度",
@@ -264,6 +268,7 @@ def calculate(data):
             "N/mm2",
             "单片耳板力*1000/(d*(t+2*t1))",
             f"{plate_force:.3f}*1000/({pin_diameter:.3f}*({t:.3f}+2*{t1:.3f}))",
+            "σc = N/[d·(t+2t₁)] ≤ fcb",
         ),
     ]
 
@@ -282,6 +287,7 @@ def calculate(data):
             "sqrt((sigma+sigma')^2+3*tau^2)",
             f"sigma={normal_stress:.3f}, sigma'={bending_stress:.3f}, tau={shear_stress:.3f}; "
             f"sqrt(({normal_stress:.3f}+{bending_stress:.3f})^2+3*{shear_stress:.3f}^2)",
+            "σeq = √[(σ+σ′)²+3τ²] ≤ 1.1f",
         )
     )
 
@@ -304,6 +310,7 @@ def calculate(data):
             "sqrt(((sigmaN+sigmaM)/beta)^2+tauV^2)",
             f"sigmaN={weld_normal:.3f}, sigmaM={weld_bending:.3f}, tauV={weld_shear:.3f}, beta={beta:.3f}; "
             f"sqrt((({weld_normal:.3f}+{weld_bending:.3f})/{beta:.3f})^2+{weld_shear:.3f}^2)",
+            "σf = √[((σN+σM)/βf)²+τV²] ≤ ffw",
         )
     )
 
@@ -584,20 +591,22 @@ class LiftingLugApp(tk.Tk):
         self.add_check_text(
             document,
             "4.1 边距要求",
-            "判定式：beff <= b 且 a >= 4/3*beff。",
+            "规范公式：",
             f"代入数值：beff = {derived['beff']:.3f} mm，b = {derived['edge_b']:.3f} mm；"
             f"a = {derived['edge_a']:.3f} mm，4/3*beff = {4 / 3 * derived['beff']:.3f} mm。",
             f"结论：{edge_result}。",
+            "beff ≤ b，且 a ≥ 4/3·beff",
         )
         for index, item in enumerate(checks, start=2):
             result = "满足" if item.passed else "不满足"
             self.add_check_text(
                 document,
                 f"4.{index} {item.name}",
-                f"计算式：{item.expression}。",
+                "规范公式：",
                 f"代入数值：{item.substitution} = {item.actual:.3f} {item.unit}。",
                 f"计算值 = {item.actual:.3f} {item.unit}；允许值 = {item.allowable:.3f} {item.unit}；"
                 f"利用率 = {item.ratio:.3f}，结论：{result}。",
+                item.word_formula or item.expression,
             )
 
         note = document.add_paragraph()
@@ -695,7 +704,7 @@ class LiftingLugApp(tk.Tk):
                 tc_width.set(qn("w:w"), str(widths_dxa[index]))
 
     @staticmethod
-    def add_check_text(document, title, formula_text, substitution_text, result_text):
+    def add_check_text(document, title, formula_text, substitution_text, result_text, equation_text=None):
         title_paragraph = document.add_paragraph()
         title_paragraph.paragraph_format.space_before = Pt(6)
         title_paragraph.paragraph_format.space_after = Pt(2)
@@ -706,6 +715,8 @@ class LiftingLugApp(tk.Tk):
         formula_paragraph.paragraph_format.left_indent = Pt(18)
         formula_paragraph.paragraph_format.space_after = Pt(2)
         formula_paragraph.add_run(formula_text)
+        if equation_text:
+            LiftingLugApp.add_equation(formula_paragraph, equation_text)
 
         substitution_paragraph = document.add_paragraph()
         substitution_paragraph.paragraph_format.left_indent = Pt(18)
@@ -716,6 +727,16 @@ class LiftingLugApp(tk.Tk):
         result_paragraph.paragraph_format.left_indent = Pt(18)
         result_paragraph.paragraph_format.space_after = Pt(4)
         result_paragraph.add_run(result_text)
+
+    @staticmethod
+    def add_equation(paragraph, equation_text):
+        math = OxmlElement("m:oMath")
+        math_run = OxmlElement("m:r")
+        math_text = OxmlElement("m:t")
+        math_text.text = equation_text
+        math_run.append(math_text)
+        math.append(math_run)
+        paragraph._p.append(math)
 
     @staticmethod
     def configure_word_styles(document):
