@@ -544,6 +544,19 @@ class LiftingLugApp(tk.Tk):
     def build_word_report(self, path, data, derived, checks, all_passed):
         document = Document()
         self.configure_word_styles(document)
+        labels = self.report_labels()
+        weight = float(data["weight"])
+        safety_factor = float(data["safety_factor"])
+        angle_deg = float(data["angle_deg"])
+        plate_thickness = float(data["plate_thickness"])
+        plate_width = float(data["plate_width"])
+        root_gap = float(data["root_gap"])
+        plate_height = float(data["plate_height"])
+        hole_diameter = float(data["hole_diameter"])
+        cover_plate_thickness = float(data["cover_plate_thickness"])
+        weld_beta = float(data["weld_beta"])
+        material = data["material"]
+        results = {item.name: item for item in checks}
 
         title = document.add_paragraph()
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -560,54 +573,149 @@ class LiftingLugApp(tk.Tk):
         result_run = conclusion.add_run("满足要求" if all_passed else "不满足，请调整参数")
         result_run.bold = True
 
-        document.add_heading("一、计算简图", level=1)
-        self.add_lug_diagram(document)
+        document.add_heading("一、计算说明", level=1)
+        self.add_body_text(
+            document,
+            "本计算书用于钢梁板式吊耳吊装验算。钢梁采用两点吊装方式，每个吊点设置双耳板。"
+            "钢丝绳与水平面夹角按输入参数考虑，吊装动力及不均匀影响通过安全系数计入。"
+        )
+        self.add_body_text(
+            document,
+            "本计算书主要验算内容包括：吊点钢丝绳拉力及单片耳板分担力、耳板几何边距、"
+            "销轴孔净截面抗拉强度、耳板端部抗拉劈开强度、耳板抗剪强度、耳板端部承压强度、"
+            "耳板与构件连接处截面承载力以及双面角焊缝承载力。"
+        )
 
-        document.add_heading("二、输入参数", level=1)
-        labels = self.report_labels()
+        document.add_heading("二、计算简图", level=1)
+        self.add_lug_diagram(document)
+        for line in [
+            "G 为钢梁自重；T3 为单吊点钢丝绳拉力设计值；T1 为吊点竖向分量；T2 为吊点水平分量。",
+            "B 为耳板宽度；h 为耳板高度；A 为耳板根部间隙；t 为耳板厚度；d0 为耳板孔径；d 为销轴直径。",
+            "a、b、Z 为耳板孔周边计算尺寸；hf 为角焊缝焊脚高度。",
+        ]:
+            self.add_body_text(document, line)
+
+        document.add_heading("三、已知参数", level=1)
         parameter_rows = [(index, label, data[key]) for index, (key, label) in enumerate(labels.items(), start=1)]
         self.add_parameter_table(document, parameter_rows)
 
-        document.add_heading("三、主要中间量", level=1)
-        derived_lines = [
-            f"1. 吊点数量 n = {derived['lift_points']:.0f} 个；每吊点耳板片数 m = {derived['lug_plates_per_point']:.0f} 片。",
-            f"2. 吊点钢丝绳拉力设计值 T3 = {derived['pull_force']:.3f} kN。",
-            f"3. 吊点竖向分量 T1 = {derived['vertical_force']:.3f} kN；吊点水平分量 T2 = {derived['horizontal_force']:.3f} kN。",
-            f"4. 单片耳板设计力 N = T3 / m = {derived['plate_force']:.3f} kN。",
-            f"5. 单片耳板竖向分量 N1 = {derived['plate_vertical_force']:.3f} kN；单片耳板水平分量 N2 = {derived['plate_horizontal_force']:.3f} kN。",
-            f"6. 销轴直径 d = {derived['pin_diameter']:.3f} mm；焊脚高度 hf = {derived['weld_size']:.3f} mm。",
-            f"7. 耳板净距 a = {derived['edge_a']:.3f} mm，b = {derived['edge_b']:.3f} mm，端部宽度 Z = {derived['edge_z']:.3f} mm。",
-            f"8. beff = {derived['beff']:.3f} mm；净宽 = {derived['net_width']:.3f} mm；焊缝计算长度 lw = {derived['weld_length']:.3f} mm。",
-            f"9. 连接处截面模量 W = {derived['section_modulus']:.3f} mm3；偏心弯矩 M = {derived['moment']:.3f} kN*m。",
-            f"10. 连接处正应力 sigma = {derived['normal_stress']:.3f} N/mm2；弯曲正应力 sigma' = {derived['bending_stress']:.3f} N/mm2；剪应力 tau = {derived['shear_stress']:.3f} N/mm2。",
-            f"11. 焊缝计算厚度 he = {derived['weld_throat']:.3f} mm；焊缝截面模量 W1 = {derived['weld_modulus']:.3f} mm3。",
-            f"12. 焊缝正应力 sigmaN = {derived['weld_normal']:.3f} N/mm2；焊缝弯曲正应力 sigmaM = {derived['weld_bending']:.3f} N/mm2；焊缝剪应力 tauV = {derived['weld_shear']:.3f} N/mm2。",
-        ]
-        for line in derived_lines:
-            self.add_numbered_text(document, line)
+        document.add_heading("四、荷载计算", level=1)
+        self.add_formula_paragraph(document, "单吊点钢丝绳拉力设计值：", "T3 = G·g·K/(n·sinθ)")
+        self.add_body_text(
+            document,
+            f"代入数值：T3 = {weight:g}×9.8×{safety_factor:g}/"
+            f"({derived['lift_points']:.0f}×sin{angle_deg:g}°) = {derived['pull_force']:.3f} kN。"
+        )
+        self.add_formula_paragraph(document, "吊点竖向分量：", "T1 = T3·sinθ")
+        self.add_body_text(document, f"T1 = {derived['pull_force']:.3f}×sin{angle_deg:g}° = {derived['vertical_force']:.3f} kN。")
+        self.add_formula_paragraph(document, "吊点水平分量：", "T2 = T3·cosθ")
+        self.add_body_text(document, f"T2 = {derived['pull_force']:.3f}×cos{angle_deg:g}° = {derived['horizontal_force']:.3f} kN。")
+        self.add_formula_paragraph(document, "单片耳板分担设计力：", "N = T3/m")
+        self.add_body_text(
+            document,
+            f"N = {derived['pull_force']:.3f}/{derived['lug_plates_per_point']:.0f} = {derived['plate_force']:.3f} kN。"
+        )
+        self.add_body_text(
+            document,
+            f"单片耳板竖向分量 N1 = {derived['plate_vertical_force']:.3f} kN；"
+            f"单片耳板水平分量 N2 = {derived['plate_horizontal_force']:.3f} kN。"
+        )
 
-        document.add_heading("四、验算结果", level=1)
+        document.add_heading("五、材料强度设计值", level=1)
+        self.add_body_text(document, f"耳板材质为 {material}，耳板厚度 t = {plate_thickness:g} mm。")
+        self.add_body_text(document, f"抗拉、抗压和抗弯强度设计值 f = {derived['strengths']['tensile']} N/mm2。")
+        self.add_body_text(document, f"抗剪强度设计值 fv = {derived['strengths']['shear']} N/mm2。")
+        self.add_body_text(document, f"端面承压强度设计值 fcb = {derived['strengths']['bearing']} N/mm2。")
+        self.add_body_text(document, f"角焊缝强度设计值 ffw = {derived['strengths']['weld']} N/mm2。")
+
+        document.add_heading("六、几何参数计算", level=1)
+        self.add_formula_paragraph(document, "销轴直径：", "d = d0 - 4")
+        self.add_body_text(document, f"d = {hole_diameter:g} - 4 = {derived['pin_diameter']:.3f} mm。")
+        self.add_formula_paragraph(document, "耳板孔至两侧净距：", "a = B/2 - d0/2")
+        self.add_body_text(document, f"a = {plate_width:g}/2 - {hole_diameter:g}/2 = {derived['edge_a']:.3f} mm；b = a = {derived['edge_b']:.3f} mm。")
+        self.add_formula_paragraph(document, "耳板端部计算宽度：", "Z = √[(a+d0/2)² - (d0/2)²]")
+        self.add_body_text(document, f"Z = √[({derived['edge_a']:.3f}+{hole_diameter:g}/2)^2 - ({hole_diameter:g}/2)^2] = {derived['edge_z']:.3f} mm。")
+        self.add_formula_paragraph(document, "有效宽度：", "beff = 2t + 16")
+        self.add_body_text(document, f"beff = 2×{plate_thickness:g} + 16 = {derived['beff']:.3f} mm。")
+        self.add_formula_paragraph(document, "销轴孔净截面计算宽度：", "b1 = min(beff, b-d0/3)")
+        self.add_body_text(document, f"b1 = min({derived['beff']:.3f}, {derived['edge_b']:.3f}-{hole_diameter:g}/3) = {derived['net_width']:.3f} mm。")
+        self.add_body_text(document, f"耳板与构件连接处计算宽度 l = B - A = {plate_width:g} - {root_gap:g} = {derived['connection_width']:.3f} mm。")
+        self.add_body_text(document, f"焊脚高度 hf = 0.7t = 0.7×{plate_thickness:g} = {derived['weld_size']:.3f} mm。")
+        self.add_body_text(document, f"焊缝计算厚度 he = 0.7hf = {derived['weld_throat']:.3f} mm。")
+        self.add_body_text(document, f"焊缝计算长度 lw = l - 2hf = {derived['connection_width']:.3f} - 2×{derived['weld_size']:.3f} = {derived['weld_length']:.3f} mm。")
+
+        document.add_heading("七、边距要求验算", level=1)
         edge_result = "满足" if derived["edge_pass"] else "不满足"
         self.add_check_text(
             document,
-            "4.1 边距要求",
+            "边距要求",
             "规范公式：",
             f"代入数值：beff = {derived['beff']:.3f} mm，b = {derived['edge_b']:.3f} mm；"
             f"a = {derived['edge_a']:.3f} mm，4/3*beff = {4 / 3 * derived['beff']:.3f} mm。",
             f"结论：{edge_result}。",
             "beff ≤ b，且 a ≥ 4/3·beff",
         )
-        for index, item in enumerate(checks, start=2):
+
+        section_titles = [
+            "八、销轴孔净截面抗拉强度验算",
+            "九、耳板端部抗拉劈开强度验算",
+            "十、耳板抗剪强度验算",
+            "十一、耳板端部承压强度验算",
+            "十二、耳板与构件连接处截面承载力验算",
+            "十三、双面角焊缝承载力验算",
+        ]
+        for section_title, item in zip(section_titles, checks):
             result = "满足" if item.passed else "不满足"
+            document.add_heading(section_title, level=1)
+            if item.name == "耳板与构件连接处截面承载力":
+                self.add_body_text(document, f"耳板与构件连接处截面模量 W = {derived['section_modulus']:.3f} mm3。")
+                self.add_body_text(document, f"单片耳板竖向分量作用下正应力 sigma = {derived['normal_stress']:.3f} N/mm2。")
+                self.add_body_text(document, f"偏心弯矩 M = {derived['moment']:.3f} kN*m。")
+                self.add_body_text(document, f"弯矩作用下正应力 sigma' = {derived['bending_stress']:.3f} N/mm2。")
+                self.add_body_text(document, f"水平分量作用下剪应力 tau = {derived['shear_stress']:.3f} N/mm2。")
+            elif item.name == "双面角焊缝承载力":
+                self.add_body_text(document, f"焊缝截面模量 W1 = {derived['weld_modulus']:.3f} mm3。")
+                self.add_body_text(document, f"竖向分量作用下焊缝正应力 sigmaN = {derived['weld_normal']:.3f} N/mm2。")
+                self.add_body_text(document, f"水平分量作用下焊缝剪应力 tauV = {derived['weld_shear']:.3f} N/mm2。")
+                self.add_body_text(document, f"弯矩作用下焊缝正应力 sigmaM = {derived['weld_bending']:.3f} N/mm2。")
             self.add_check_text(
                 document,
-                f"4.{index} {item.name}",
+                item.name,
                 "规范公式：",
                 f"代入数值：{item.substitution} = {item.actual:.3f} {item.unit}。",
                 f"计算值 = {item.actual:.3f} {item.unit}；允许值 = {item.allowable:.3f} {item.unit}；"
                 f"利用率 = {item.ratio:.3f}，结论：{result}。",
                 item.word_formula or item.expression,
             )
+
+        document.add_heading("十四、验算结果汇总", level=1)
+        summary_lines = [f"1. 边距要求：{edge_result}；"]
+        for index, item in enumerate(checks, start=2):
+            summary_lines.append(f"{index}. {item.name}：{'满足' if item.passed else '不满足'}；")
+        for line in summary_lines:
+            self.add_numbered_text(document, line)
+
+        document.add_heading("十五、结论及建议", level=1)
+        if all_passed:
+            self.add_body_text(document, "本吊耳在当前参数条件下，各项验算均满足要求，可按当前参数采用。")
+        else:
+            self.add_body_text(
+                document,
+                "本吊耳在当前参数条件下存在不满足项，不宜直接采用，应调整相关尺寸或参数后重新验算。"
+            )
+            if not derived["edge_pass"]:
+                self.add_body_text(
+                    document,
+                    f"其中边距要求不满足：a = {derived['edge_a']:.3f} mm，"
+                    f"4/3·beff = {4 / 3 * derived['beff']:.3f} mm。"
+                )
+                for line in [
+                    "建议增大耳板宽度 B；",
+                    "建议增大孔边距 a、b；",
+                    "可结合销轴和吊装要求调整耳板孔径 d0；",
+                    "优化耳板外形尺寸后应重新进行耳板本体、承压、连接截面及焊缝承载力验算。",
+                ]:
+                    self.add_numbered_text(document, line)
 
         note = document.add_paragraph()
         note.add_run("说明：").bold = True
@@ -632,6 +740,21 @@ class LiftingLugApp(tk.Tk):
         caption = document.add_paragraph()
         caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
         caption.add_run("图 1  吊耳尺寸、受力及焊缝计算简图")
+
+    @staticmethod
+    def add_body_text(document, text):
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.first_line_indent = Pt(21)
+        paragraph.paragraph_format.space_after = Pt(4)
+        paragraph.add_run(text)
+
+    @staticmethod
+    def add_formula_paragraph(document, label, equation_text):
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.left_indent = Pt(18)
+        paragraph.paragraph_format.space_after = Pt(4)
+        paragraph.add_run(label)
+        LiftingLugApp.add_equation(paragraph, equation_text)
 
     @staticmethod
     def add_numbered_text(document, text):
