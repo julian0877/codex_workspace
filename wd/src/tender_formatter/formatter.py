@@ -63,8 +63,12 @@ def _repeat_header(row) -> None:
     header.set(qn("w:val"), "true")
 
 
-def _format_tables(document, profile: FormatProfile) -> None:
-    for table in document.tables:
+def _format_tables(
+    document, profile: FormatProfile, risky_indexes: set[int]
+) -> None:
+    for table_index, table in enumerate(document.tables):
+        if table_index in risky_indexes:
+            continue
         table.alignment = _TABLE_ALIGNMENTS[profile.table.alignment]
         table.autofit = True
         table_width = table._tbl.tblPr.find(qn("w:tblW"))
@@ -111,7 +115,11 @@ def execute_docx_plan(plan: FormatPlan, profile: FormatProfile) -> Path:
         elif operation.kind == "apply_page":
             _apply_page_rules(document, profile)
         elif operation.kind == "format_tables":
-            _format_tables(document, profile)
+            _format_tables(
+                document,
+                profile,
+                set(operation.parameters.get("risky_indexes", [])),
+            )
         elif operation.kind == "format_images":
             _format_images(document, profile)
 

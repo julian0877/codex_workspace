@@ -69,4 +69,6 @@ def read_template_profile(path: Path, name: str) -> FormatProfile:
     profile.page.left_cm = section.left_margin.cm
     profile.page.right_cm = section.right_margin.cm
     profile.page.gutter_cm = section.gutter.cm
+    profile.page.first_page_different = section.different_first_page_header_footer
+    profile.page.odd_even_pages = document.settings.odd_and_even_pages_header_footer
     return profile

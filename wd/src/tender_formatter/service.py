@@ -1,5 +1,6 @@
 from pathlib import Path
 import hashlib
+import re
 import tempfile
 
 from docx import Document
@@ -44,7 +45,12 @@ class FormatterService:
             raise ValueError("必须选择有效的企业 Word 样板")
         output.parent.mkdir(parents=True, exist_ok=True)
         source_hash = hashlib.sha256(analysis.source.read_bytes()).digest()
-        settings = WordSettings(body_page_start=profile.page.body_page_start)
+        settings = WordSettings(
+            body_page_start=profile.page.body_page_start,
+            first_page_different=profile.page.first_page_different,
+            odd_even_pages=profile.page.odd_even_pages,
+            toc_levels=profile.toc_levels,
+        )
         with tempfile.TemporaryDirectory(
             prefix="tender_formatter_", dir=output.parent
         ) as temporary_directory:
@@ -53,6 +59,8 @@ class FormatterService:
             assembled_path = temporary / "assembled.docx"
             plan = build_plan(analysis, profile, overrides, content_path)
             execute_docx_plan(plan, profile)
+            content_counts = self._object_counts(Document(content_path))
+            template_counts = self._object_counts(Document(profile.template_path))
             self._word.assemble(
                 content_path,
                 assembled_path,
@@ -60,7 +68,20 @@ class FormatterService:
                 settings,
                 cover_values,
             )
-            Document(assembled_path)
+            assembled_counts = self._object_counts(Document(assembled_path))
+            expected_counts = tuple(
+                content + template
+                for content, template in zip(
+                    content_counts, template_counts, strict=True
+                )
+            )
+            if any(
+                actual < expected
+                for actual, expected in zip(
+                    assembled_counts, expected_counts, strict=True
+                )
+            ):
+                raise RuntimeError("Word 组装后表格、图片或题注对象数量减少")
             if hashlib.sha256(analysis.source.read_bytes()).digest() != source_hash:
                 raise RuntimeError("源文件在处理期间发生变化，已停止发布")
             assembled_path.replace(output)
@@ -84,4 +105,16 @@ class FormatterService:
             report=report_path,
             operation_count=len(plan.operations),
             warnings=warnings,
+        )
+
+    @staticmethod
+    def _object_counts(document) -> tuple[int, int, int]:
+        captions = sum(
+            bool(re.match(r"^图\s*\d+(?:[.-]\d+)*\s+", paragraph.text.strip()))
+            for paragraph in document.paragraphs
+        )
+        return (
+            len(document.tables),
+            len(document.part.element.xpath(".//a:blip")),
+            captions,
         )

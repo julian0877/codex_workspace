@@ -61,6 +61,8 @@ class PageRules(BaseModel):
     right_cm: float = 2.5
     gutter_cm: float = 0
     body_page_start: int = 1
+    first_page_different: bool = True
+    odd_even_pages: bool = False
 
 
 class TableRules(BaseModel):
@@ -85,6 +87,7 @@ class FormatProfile(BaseModel):
     page: PageRules = PageRules()
     table: TableRules = TableRules()
     image: ImageRules = ImageRules()
+    toc_levels: int = Field(default=3, ge=1, le=3)
 
     @model_validator(mode="after")
     def validate_thresholds(self):
@@ -101,6 +104,7 @@ class DocumentAnalysis(BaseModel):
     image_count: int = 0
     section_count: int = 0
     structure_warnings: list[str] = []
+    risky_table_indexes: list[int] = []
 
 
 class FormatOperation(BaseModel):

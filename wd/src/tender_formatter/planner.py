@@ -63,7 +63,10 @@ def build_plan(
             FormatOperation(
                 kind="format_tables",
                 target="all",
-                parameters=profile.table.model_dump(),
+                parameters={
+                    **profile.table.model_dump(),
+                    "risky_indexes": analysis.risky_table_indexes,
+                },
             ),
             FormatOperation(
                 kind="format_images",

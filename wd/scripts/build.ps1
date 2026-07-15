@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 $env:QT_QPA_PLATFORM = "offscreen"
 
-python -m pytest -v
+python -m pytest -m "not word_integration" -v
 if ($LASTEXITCODE -ne 0) { throw "Automated tests failed" }
 
 python -m PyInstaller `

@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 from docx import Document
+from docx.enum.section import WD_SECTION
+from docx.oxml.ns import qn
 
 from tender_formatter.word_adapter import (
     WordAdapter,
@@ -136,6 +138,8 @@ def test_real_word_assembles_template_cover_toc_content_and_page_number(tmp_path
     content_document = Document()
     content_document.add_paragraph("第一章 施工部署", style="Heading 1")
     content_document.add_paragraph("正文内容")
+    content_document.add_section(WD_SECTION.NEW_PAGE)
+    content_document.add_paragraph("横向表格节后的内容")
     content_document.save(content)
     output = tmp_path / "assembled.docx"
 
@@ -158,3 +162,9 @@ def test_real_word_assembles_template_cover_toc_content_and_page_number(tmp_path
     assert "{{目录}}" not in text
     assert 'w:instrText xml:space="preserve"> TOC ' in xml
     assert "> PAGE <" in footer_xml
+    assert len(assembled.sections) >= 3
+    body_numbering = assembled.sections[1]._sectPr.find(qn("w:pgNumType"))
+    assert body_numbering is not None
+    assert body_numbering.get(qn("w:start")) == "1"
+    later_numbering = assembled.sections[2]._sectPr.find(qn("w:pgNumType"))
+    assert later_numbering is None or later_numbering.get(qn("w:start")) is None

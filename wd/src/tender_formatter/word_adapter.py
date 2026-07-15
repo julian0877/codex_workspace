@@ -1,12 +1,19 @@
 from collections.abc import Callable
 from pathlib import Path
+import ctypes
+import logging
 import shutil
+import subprocess
+import threading
 
 from pydantic import BaseModel, Field
 
 from docx import Document
 
 from tender_formatter.cover import find_cover_fields, replace_cover_fields
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class WordAutomationError(RuntimeError):
@@ -19,6 +26,34 @@ class WordSettings(BaseModel):
     body_section_index: int = Field(default=1, ge=1)
     first_page_different: bool = True
     odd_even_pages: bool = False
+    timeout_seconds: int = Field(default=120, ge=10, le=1800)
+    toc_levels: int = Field(default=3, ge=1, le=3)
+
+
+def _start_watchdog(application, timeout_seconds: int):
+    try:
+        process_id = ctypes.c_ulong()
+        ctypes.windll.user32.GetWindowThreadProcessId(
+            int(application.Hwnd), ctypes.byref(process_id)
+        )
+        if not process_id.value:
+            return None
+    except Exception:
+        return None
+
+    def terminate_private_word():
+        _LOGGER.error("Word automation timed out; terminating private PID %s", process_id.value)
+        subprocess.run(
+            ["taskkill", "/PID", str(process_id.value), "/T", "/F"],
+            check=False,
+            capture_output=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+
+    timer = threading.Timer(timeout_seconds, terminate_private_word)
+    timer.daemon = True
+    timer.start()
+    return timer
 
 
 def _default_dispatch_ex(name: str):
@@ -37,20 +72,16 @@ class WordAdapter:
         self._dispatch_ex = dispatch_ex
 
     def _configure_sections(self, document, settings: WordSettings) -> None:
-        for section_index, section in _iter_collection(document.Sections):
-            section.PageSetup.DifferentFirstPageHeaderFooter = (
-                settings.first_page_different
-            )
-            section.PageSetup.OddAndEvenPagesHeaderFooter = settings.odd_even_pages
-            if section_index > 1:
-                for _, header in _iter_collection(section.Headers):
-                    header.LinkToPrevious = False
-                for _, footer in _iter_collection(section.Footers):
-                    footer.LinkToPrevious = False
-            if section_index == settings.body_section_index:
-                _, primary_footer = next(_iter_collection(section.Footers))
-                primary_footer.PageNumbers.RestartNumberingAtSection = True
-                primary_footer.PageNumbers.StartingNumber = settings.body_page_start
+        if settings.body_section_index > document.Sections.Count:
+            raise ValueError("正文起始节超出文档节数")
+        section = document.Sections(settings.body_section_index)
+        section.PageSetup.DifferentFirstPageHeaderFooter = (
+            settings.first_page_different
+        )
+        section.PageSetup.OddAndEvenPagesHeaderFooter = settings.odd_even_pages
+        _, primary_footer = next(_iter_collection(section.Footers))
+        primary_footer.PageNumbers.RestartNumberingAtSection = True
+        primary_footer.PageNumbers.StartingNumber = settings.body_page_start
 
     def finalize(self, path: Path, settings: WordSettings) -> None:
         import pythoncom
@@ -58,10 +89,12 @@ class WordAdapter:
         pythoncom.CoInitialize()
         application = None
         document = None
+        watchdog = None
         try:
             application = self._dispatch_ex("Word.Application")
             application.Visible = False
             application.DisplayAlerts = 0
+            watchdog = _start_watchdog(application, settings.timeout_seconds)
             document = application.Documents.Open(str(path.resolve()))
             self._configure_sections(document, settings)
             if settings.update_toc:
@@ -75,16 +108,18 @@ class WordAdapter:
         except Exception as exc:
             raise WordAutomationError(f"Word 自动化失败：{exc}") from exc
         finally:
+            if watchdog is not None:
+                watchdog.cancel()
             if document is not None:
                 try:
                     document.Close(False)
-                except Exception:
-                    pass
+                except Exception as cleanup_error:
+                    _LOGGER.exception("Failed to close private Word document: %s", cleanup_error)
             if application is not None:
                 try:
                     application.Quit()
-                except Exception:
-                    pass
+                except Exception as cleanup_error:
+                    _LOGGER.exception("Failed to quit private Word instance: %s", cleanup_error)
             pythoncom.CoUninitialize()
 
     def assemble(
@@ -112,18 +147,21 @@ class WordAdapter:
         pythoncom.CoInitialize()
         application = None
         document = None
+        watchdog = None
         try:
             application = self._dispatch_ex("Word.Application")
             application.Visible = False
             application.DisplayAlerts = 0
+            watchdog = _start_watchdog(application, settings.timeout_seconds)
             document = application.Documents.Open(str(output_path.resolve()))
+            template_section_count = document.Sections.Count
 
             insertion = document.Content
             insertion.Collapse(0)
             insertion.InsertBreak(2)
             insertion.Collapse(0)
             insertion.InsertFile(str(content_path.resolve()))
-            settings.body_section_index = document.Sections.Count
+            settings.body_section_index = template_section_count + 1
 
             toc_range = document.Content.Duplicate
             found_marker = toc_range.Find.Execute(FindText="{{目录}}")
@@ -133,7 +171,7 @@ class WordAdapter:
                     Range=toc_range,
                     UseHeadingStyles=True,
                     UpperHeadingLevel=1,
-                    LowerHeadingLevel=3,
+                    LowerHeadingLevel=settings.toc_levels,
                     IncludePageNumbers=True,
                     RightAlignPageNumbers=True,
                 )
@@ -155,14 +193,16 @@ class WordAdapter:
                 raise
             raise WordAutomationError(f"Word 自动化失败：{exc}") from exc
         finally:
+            if watchdog is not None:
+                watchdog.cancel()
             if document is not None:
                 try:
                     document.Close(False)
-                except Exception:
-                    pass
+                except Exception as cleanup_error:
+                    _LOGGER.exception("Failed to close assembled Word document: %s", cleanup_error)
             if application is not None:
                 try:
                     application.Quit()
-                except Exception:
-                    pass
+                except Exception as cleanup_error:
+                    _LOGGER.exception("Failed to quit assembled Word instance: %s", cleanup_error)
             pythoncom.CoUninitialize()

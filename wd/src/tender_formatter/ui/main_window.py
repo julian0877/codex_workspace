@@ -138,6 +138,18 @@ class MainWindow(QMainWindow):
         self.right_margin.setValue(2.5)
         self.body_page_start = QSpinBox()
         self.body_page_start.setRange(1, 9999)
+        self.toc_levels = QSpinBox()
+        self.toc_levels.setRange(1, 3)
+        self.toc_levels.setValue(3)
+        self.first_page_different = QCheckBox("正文节首页不同")
+        self.first_page_different.setChecked(True)
+        self.odd_even_pages = QCheckBox("奇偶页不同")
+        self.heading_sizes: dict[int, QDoubleSpinBox] = {}
+        for level, default in ((1, 16), (2, 14), (3, 12)):
+            spin = QDoubleSpinBox()
+            spin.setRange(6, 72)
+            spin.setValue(default)
+            self.heading_sizes[level] = spin
         self.table_width = QSpinBox()
         self.table_width.setRange(10, 100)
         self.table_width.setValue(100)
@@ -154,6 +166,11 @@ class MainWindow(QMainWindow):
         layout.addRow("左页边距（厘米）", self.left_margin)
         layout.addRow("右页边距（厘米）", self.right_margin)
         layout.addRow("正文起始页码", self.body_page_start)
+        layout.addRow("目录显示层级", self.toc_levels)
+        layout.addRow("首页页眉页脚", self.first_page_different)
+        layout.addRow("奇偶页页眉页脚", self.odd_even_pages)
+        for level, spin in self.heading_sizes.items():
+            layout.addRow(f"{level} 级标题字号（磅）", spin)
         layout.addRow("表格宽度（%）", self.table_width)
         layout.addRow("表格跨页设置", self.repeat_table_header)
         layout.addRow("图片最大宽度（厘米）", self.image_width)
@@ -235,6 +252,11 @@ class MainWindow(QMainWindow):
         self.profile.page.left_cm = self.left_margin.value()
         self.profile.page.right_cm = self.right_margin.value()
         self.profile.page.body_page_start = self.body_page_start.value()
+        self.profile.page.first_page_different = self.first_page_different.isChecked()
+        self.profile.page.odd_even_pages = self.odd_even_pages.isChecked()
+        self.profile.toc_levels = self.toc_levels.value()
+        for level, spin in self.heading_sizes.items():
+            self.profile.headings[level].size_pt = spin.value()
         self.profile.table.width_percent = self.table_width.value()
         self.profile.table.repeat_header = self.repeat_table_header.isChecked()
         self.profile.image.max_width_cm = self.image_width.value()
@@ -268,6 +290,15 @@ class MainWindow(QMainWindow):
                 self.left_margin.setValue(self.profile.page.left_cm)
                 self.right_margin.setValue(self.profile.page.right_cm)
                 self.body_page_start.setValue(self.profile.page.body_page_start)
+                self.toc_levels.setValue(self.profile.toc_levels)
+                self.first_page_different.setChecked(
+                    self.profile.page.first_page_different
+                )
+                self.odd_even_pages.setChecked(
+                    self.profile.page.odd_even_pages
+                )
+                for level, spin in self.heading_sizes.items():
+                    spin.setValue(self.profile.headings[level].size_pt)
                 self.table_width.setValue(self.profile.table.width_percent)
                 self.repeat_table_header.setChecked(
                     self.profile.table.repeat_header
@@ -305,6 +336,8 @@ class MainWindow(QMainWindow):
     def _background_finished(self) -> None:
         self.status_label.setText("")
         self._sync_navigation()
+        if self.stack.currentIndex() == 2:
+            self._update_generate_enabled()
 
     def _analysis_ready(self, analysis: DocumentAnalysis) -> None:
         self.set_analysis(analysis)

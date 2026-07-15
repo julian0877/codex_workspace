@@ -51,6 +51,12 @@ python -m tender_formatter.main
 powershell -ExecutionPolicy Bypass -File scripts/build.ps1
 ```
 
+真实 Word 集成测试可单独执行：
+
+```powershell
+python -m pytest -m word_integration -v
+```
+
 构建成功后程序位于：
 
 ```text

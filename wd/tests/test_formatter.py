@@ -69,3 +69,19 @@ def test_formatter_repeats_table_header_and_scales_wide_image(tmp_path, profile)
         if paragraph._p.xpath(".//a:blip")
     )
     assert picture_paragraph.alignment == 1
+
+
+def test_formatter_skips_risky_table_layout_changes(tmp_path, profile):
+    plan = make_plan(tmp_path)
+    table_operation = next(
+        operation for operation in plan.operations if operation.kind == "format_tables"
+    )
+    table_operation.parameters["risky_indexes"] = [0]
+
+    output = execute_docx_plan(plan, profile)
+
+    document = Document(output)
+    table_width = document.tables[0]._tbl.tblPr.find(qn("w:tblW"))
+    header = document.tables[0].rows[0]._tr.get_or_add_trPr().find(qn("w:tblHeader"))
+    assert table_width.get(qn("w:type")) == "auto"
+    assert header is None

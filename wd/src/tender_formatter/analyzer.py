@@ -70,7 +70,18 @@ def analyze_docx(path: Path) -> DocumentAnalysis:
         warnings.append("存在浮动图片，需要人工复核")
     if any(section.page_width > section.page_height for section in document.sections):
         warnings.append("存在横向页面，分节格式需要人工复核")
-    if any(cell.tables for table in document.tables for row in table.rows for cell in row.cells):
+    risky_table_indexes: list[int] = []
+    for table_index, table in enumerate(document.tables):
+        nested = any(cell.tables for row in table.rows for cell in row.cells)
+        merged = bool(table._tbl.xpath(".//w:gridSpan | .//w:vMerge"))
+        if nested or merged:
+            risky_table_indexes.append(table_index)
+    if any(
+        cell.tables
+        for table in document.tables
+        for row in table.rows
+        for cell in row.cells
+    ):
         warnings.append("存在嵌套表格，需要人工复核")
     if document.part.element.xpath(".//w:gridSpan | .//w:vMerge"):
         warnings.append("存在合并单元格，需要人工复核")
@@ -82,4 +93,5 @@ def analyze_docx(path: Path) -> DocumentAnalysis:
         image_count=image_count,
         section_count=len(document.sections),
         structure_warnings=warnings,
+        risky_table_indexes=risky_table_indexes,
     )
