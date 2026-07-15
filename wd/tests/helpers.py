@@ -3,7 +3,7 @@ import base64
 
 from docx import Document
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Cm, Pt
 
 
 def _set_style_font(style, east_asia_font: str, size_pt: float, bold: bool) -> None:
@@ -37,7 +37,7 @@ def make_mixed_docx(path: Path) -> Path:
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
         )
     )
-    document.add_picture(str(image_path))
+    document.add_picture(str(image_path), width=Cm(20))
     document.save(path)
     image_path.unlink()
     return path
