@@ -67,6 +67,12 @@ def _format_tables(document, profile: FormatProfile) -> None:
     for table in document.tables:
         table.alignment = _TABLE_ALIGNMENTS[profile.table.alignment]
         table.autofit = True
+        table_width = table._tbl.tblPr.find(qn("w:tblW"))
+        if table_width is None:
+            table_width = OxmlElement("w:tblW")
+            table._tbl.tblPr.insert(0, table_width)
+        table_width.set(qn("w:type"), "pct")
+        table_width.set(qn("w:w"), str(profile.table.width_percent * 50))
         if profile.table.repeat_header and table.rows:
             _repeat_header(table.rows[0])
 
@@ -74,18 +80,13 @@ def _format_tables(document, profile: FormatProfile) -> None:
 def _format_images(document, profile: FormatProfile) -> None:
     maximum_width = Cm(profile.image.max_width_cm)
     for shape in document.inline_shapes:
-        if shape.width <= maximum_width:
-            continue
-        ratio = maximum_width / shape.width
-        shape.width = maximum_width
-        shape.height = int(shape.height * ratio)
-        paragraph = shape._inline.getparent().getparent()
-        if hasattr(paragraph, "getparent"):
-            wrapper = next(
-                (item for item in document.paragraphs if item._p is paragraph), None
-            )
-            if wrapper is not None:
-                wrapper.alignment = _PARAGRAPH_ALIGNMENTS[profile.image.alignment]
+        if shape.width > maximum_width:
+            ratio = maximum_width / shape.width
+            shape.width = maximum_width
+            shape.height = int(shape.height * ratio)
+    for paragraph in document.paragraphs:
+        if paragraph._p.xpath(".//a:blip"):
+            paragraph.alignment = _PARAGRAPH_ALIGNMENTS[profile.image.alignment]
 
 
 def execute_docx_plan(plan: FormatPlan, profile: FormatProfile) -> Path:

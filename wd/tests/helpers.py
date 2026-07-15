@@ -2,6 +2,7 @@ from pathlib import Path
 import base64
 
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 
@@ -16,9 +17,15 @@ def _set_style_font(style, east_asia_font: str, size_pt: float, bold: bool) -> N
 def make_docx_with_styles(path: Path) -> Path:
     document = Document()
     _set_style_font(document.styles["Normal"], "宋体", 12, False)
+    document.styles["Normal"].paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    document.styles["Normal"].paragraph_format.line_spacing = 1.5
+    document.styles["Normal"].paragraph_format.space_before = Pt(6)
+    document.styles["Normal"].paragraph_format.space_after = Pt(3)
     _set_style_font(document.styles["Heading 1"], "黑体", 16, True)
     _set_style_font(document.styles["Heading 2"], "黑体", 14, True)
     _set_style_font(document.styles["Heading 3"], "黑体", 12, True)
+    document.sections[0].left_margin = Cm(3.2)
+    document.sections[0].right_margin = Cm(2.2)
     document.save(path)
     return path
 

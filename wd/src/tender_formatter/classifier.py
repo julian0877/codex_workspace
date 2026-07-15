@@ -15,6 +15,7 @@ _LEVEL_TWO = re.compile(r"^\d+\.\d+(?:[、.]|\s)+\S")
 _LEVEL_ONE = re.compile(r"^\d+[、.]\s*\S")
 _CAPTION = re.compile(r"^图\s*\d+(?:[.-]\d+)*\s+")
 _HEADING_STYLE = re.compile(r"(?:Heading|标题)\s*([123])", re.IGNORECASE)
+_NUMBER_PREFIX = re.compile(r"^(\d+(?:\.\d+){0,2})(?:[、.]|\s)")
 
 
 def _explicit_level(text: str) -> int | None:
@@ -121,4 +122,24 @@ def classify_paragraphs(
         seen_levels.difference_update(
             level for level in tuple(seen_levels) if level > decision.level
         )
+    seen_numbers: set[tuple[int, ...]] = set()
+    last_sibling: dict[tuple[int, ...], int] = {}
+    for paragraph, decision in zip(paragraphs, decisions, strict=True):
+        if decision.kind != BlockKind.HEADING:
+            continue
+        match = _NUMBER_PREFIX.match(paragraph.text.strip())
+        if not match:
+            continue
+        number = tuple(int(part) for part in match.group(1).split("."))
+        if number in seen_numbers:
+            decision.risk = RiskLevel.HIGH
+            decision.reasons.append("标题编号重复")
+            continue
+        parent = number[:-1]
+        previous = last_sibling.get(parent)
+        if previous is not None and number[-1] != previous + 1:
+            decision.risk = RiskLevel.HIGH
+            decision.reasons.append("同级标题编号不连续")
+        seen_numbers.add(number)
+        last_sibling[parent] = number[-1]
     return decisions

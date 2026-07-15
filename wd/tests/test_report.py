@@ -9,6 +9,9 @@ def test_report_contains_counts_but_not_body_text(tmp_path):
         operation_count=8,
         warnings=["编号跳级"],
         paragraph_count=100,
+        heading_count=12,
+        confirmed_count=3,
+        template_name="company.docx",
     )
 
     data = json.loads(report.read_text(encoding="utf-8"))
@@ -16,4 +19,7 @@ def test_report_contains_counts_but_not_body_text(tmp_path):
     assert data["operation_count"] == 8
     assert data["paragraph_count"] == 100
     assert data["warnings"] == ["编号跳级"]
+    assert data["heading_count"] == 12
+    assert data["confirmed_count"] == 3
+    assert data["template_name"] == "company.docx"
     assert "document_text" not in data

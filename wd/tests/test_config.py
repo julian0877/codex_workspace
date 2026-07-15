@@ -20,5 +20,10 @@ def test_read_template_extracts_normal_and_heading_styles(tmp_path):
 
     assert profile.body.east_asia_font == "宋体"
     assert profile.body.size_pt == 12
+    assert profile.body.line_spacing == 1.5
+    assert profile.body.space_before_pt == 6
+    assert profile.body.space_after_pt == 3
+    assert round(profile.page.left_cm, 1) == 3.2
+    assert round(profile.page.right_cm, 1) == 2.2
     assert profile.headings[1].east_asia_font == "黑体"
     assert profile.headings[1].bold is True

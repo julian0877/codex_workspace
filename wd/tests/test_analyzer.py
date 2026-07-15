@@ -19,6 +19,7 @@ def test_analyzer_extracts_structure_without_modifying_source(tmp_path):
     assert result.table_count == 1
     assert result.image_count == 1
     assert result.section_count == 1
+    assert "存在未配置题注的图片" in result.structure_warnings
     assert source.read_bytes() == before
 
 

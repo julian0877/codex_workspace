@@ -100,6 +100,7 @@ class DocumentAnalysis(BaseModel):
     table_count: int = 0
     image_count: int = 0
     section_count: int = 0
+    structure_warnings: list[str] = []
 
 
 class FormatOperation(BaseModel):

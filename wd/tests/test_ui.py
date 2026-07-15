@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from PySide6.QtCore import Qt
+
 from tender_formatter.domain import (
     BlockDecision,
     BlockKind,
@@ -8,6 +10,7 @@ from tender_formatter.domain import (
     RiskLevel,
 )
 from tender_formatter.ui.main_window import MainWindow
+from tests.helpers import make_cover_docx, make_docx_with_styles
 
 
 class FakeService:
@@ -72,12 +75,59 @@ def test_review_page_lists_only_review_and_high_risks(qtbot):
     assert window.review_model.rowCount() == 2
 
 
-def test_generate_is_blocked_until_all_risks_confirmed(qtbot):
+def test_generate_is_blocked_until_each_risk_is_confirmed(qtbot):
     window = MainWindow(FakeService())
     qtbot.addWidget(window)
     window.set_analysis(risk_analysis())
 
     assert not window.generate_button.isEnabled()
-    window.review_model.confirm_all_as_suggested()
+    window.review_model.confirm_row(0)
+
+    assert not window.generate_button.isEnabled()
+    window.review_model.confirm_row(1)
+
+    assert window.generate_button.isEnabled()
+
+
+def test_review_model_allows_user_to_correct_kind_and_level(qtbot):
+    window = MainWindow(FakeService())
+    qtbot.addWidget(window)
+    window.set_analysis(risk_analysis())
+    model = window.review_model
+
+    assert model.setData(model.index(0, 3), "2", Qt.EditRole)
+    model.confirm_row(0)
+
+    assert model.overrides()[1].level == 2
+
+
+def test_template_cover_fields_are_exposed_for_input(qtbot, tmp_path):
+    source = make_docx_with_styles(tmp_path / "source.docx")
+    template = make_cover_docx(
+        tmp_path / "template.docx", "{{项目名称}}\n{{投标单位}}\n{{目录}}"
+    )
+    window = MainWindow(FakeService())
+    qtbot.addWidget(window)
+    window.source_edit.setText(str(source))
+    window.template_edit.setText(str(template))
+    window.output_edit.setText(str(tmp_path / "output.docx"))
+
+    window._next()
+
+    assert set(window.cover_edits) == {"项目名称", "投标单位"}
+
+
+def test_structure_warnings_require_explicit_acknowledgement(qtbot):
+    analysis = risk_analysis().model_copy(
+        update={"structure_warnings": ["存在浮动图片，需要人工复核"]}
+    )
+    window = MainWindow(FakeService())
+    qtbot.addWidget(window)
+    window.set_analysis(analysis)
+    window.review_model.confirm_row(0)
+    window.review_model.confirm_row(1)
+
+    assert not window.generate_button.isEnabled()
+    window._acknowledge_structure_warnings()
 
     assert window.generate_button.isEnabled()

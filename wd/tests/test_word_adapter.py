@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from docx import Document
 
 from tender_formatter.word_adapter import (
     WordAdapter,
@@ -122,3 +123,38 @@ def test_finalize_quits_private_instance_on_failure(tmp_path):
 
     assert app.opened_document.closed
     assert app.quit_called
+
+
+@pytest.mark.word_integration
+def test_real_word_assembles_template_cover_toc_content_and_page_number(tmp_path):
+    template = tmp_path / "template.docx"
+    template_document = Document()
+    template_document.add_paragraph("{{项目名称}}")
+    template_document.add_paragraph("{{目录}}")
+    template_document.save(template)
+    content = tmp_path / "content.docx"
+    content_document = Document()
+    content_document.add_paragraph("第一章 施工部署", style="Heading 1")
+    content_document.add_paragraph("正文内容")
+    content_document.save(content)
+    output = tmp_path / "assembled.docx"
+
+    WordAdapter().assemble(
+        content,
+        output,
+        template,
+        WordSettings(),
+        {"项目名称": "厂房项目"},
+    )
+
+    assembled = Document(output)
+    text = "\n".join(paragraph.text for paragraph in assembled.paragraphs)
+    xml = assembled._element.xml
+    footer_xml = "".join(
+        section.footer._element.xml for section in assembled.sections
+    )
+    assert "厂房项目" in text
+    assert "第一章 施工部署" in text
+    assert "{{目录}}" not in text
+    assert 'w:instrText xml:space="preserve"> TOC ' in xml
+    assert "> PAGE <" in footer_xml

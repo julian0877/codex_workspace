@@ -57,6 +57,15 @@ def test_formatter_repeats_table_header_and_scales_wide_image(tmp_path, profile)
     document = Document(output)
     header = document.tables[0].rows[0]._tr.get_or_add_trPr().find(qn("w:tblHeader"))
     assert header is not None
+    table_width = document.tables[0]._tbl.tblPr.find(qn("w:tblW"))
+    assert table_width.get(qn("w:type")) == "pct"
+    assert table_width.get(qn("w:w")) == str(profile.table.width_percent * 50)
     assert max(shape.width.cm for shape in document.inline_shapes) <= (
         profile.image.max_width_cm + 0.01
     )
+    picture_paragraph = next(
+        paragraph
+        for paragraph in document.paragraphs
+        if paragraph._p.xpath(".//a:blip")
+    )
+    assert picture_paragraph.alignment == 1

@@ -1,6 +1,11 @@
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, Signal
 
-from tender_formatter.domain import BlockDecision, DocumentAnalysis, RiskLevel
+from tender_formatter.domain import (
+    BlockDecision,
+    BlockKind,
+    DocumentAnalysis,
+    RiskLevel,
+)
 
 
 class ReviewModel(QAbstractTableModel):
@@ -37,7 +42,7 @@ class ReviewModel(QAbstractTableModel):
         return None
 
     def data(self, index, role=Qt.DisplayRole):
-        if not index.isValid() or role != Qt.DisplayRole:
+        if not index.isValid() or role not in (Qt.DisplayRole, Qt.EditRole):
             return None
         decision = self._items[index.row()]
         paragraph = (
@@ -55,13 +60,49 @@ class ReviewModel(QAbstractTableModel):
         )
         return values[index.column()]
 
+    def flags(self, index):
+        flags = super().flags(index)
+        if index.isValid() and index.column() in (2, 3):
+            flags |= Qt.ItemIsEditable
+        return flags
+
+    def setData(self, index, value, role=Qt.EditRole):
+        if not index.isValid() or role != Qt.EditRole:
+            return False
+        decision = self._items[index.row()]
+        try:
+            if index.column() == 2:
+                kind = BlockKind(str(value).strip().lower())
+                level = decision.level if kind == BlockKind.HEADING else None
+                if kind == BlockKind.HEADING and level is None:
+                    level = 1
+                updated = decision.model_copy(
+                    update={"kind": kind, "level": level}
+                )
+            elif index.column() == 3 and decision.kind == BlockKind.HEADING:
+                updated = decision.model_copy(update={"level": int(value)})
+                BlockDecision.model_validate(updated.model_dump())
+            else:
+                return False
+        except (ValueError, TypeError):
+            return False
+        self._items[index.row()] = updated
+        self._confirmed.discard(updated.index)
+        self.dataChanged.emit(self.index(index.row(), 2), self.index(index.row(), 5))
+        self.confirmation_changed.emit(False)
+        return True
+
+    def confirm_row(self, row: int) -> None:
+        if row < 0 or row >= len(self._items):
+            return
+        decision = self._items[row]
+        self._confirmed.add(decision.index)
+        self.dataChanged.emit(self.index(row, 5), self.index(row, 5))
+        self.confirmation_changed.emit(len(self._confirmed) == len(self._items))
+
     def confirm_all_as_suggested(self) -> None:
-        self._confirmed = {decision.index for decision in self._items}
-        if self._items:
-            self.dataChanged.emit(
-                self.index(0, 5), self.index(len(self._items) - 1, 5)
-            )
-        self.confirmation_changed.emit(True)
+        for row in range(len(self._items)):
+            self.confirm_row(row)
 
     def overrides(self) -> dict[int, BlockDecision]:
         return {

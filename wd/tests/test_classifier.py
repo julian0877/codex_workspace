@@ -62,3 +62,17 @@ def test_plain_and_empty_paragraphs_are_not_headings():
 
     assert result[0].kind == BlockKind.BODY
     assert result[1].kind == BlockKind.EMPTY
+
+
+def test_duplicate_and_skipped_sibling_numbers_are_high_risk():
+    result = classify(
+        ParagraphEvidence(text="第一章 总则"),
+        ParagraphEvidence(text="1.1 内容"),
+        ParagraphEvidence(text="1.1 重复"),
+        ParagraphEvidence(text="1.3 跳号"),
+    )
+
+    assert result[2].risk == RiskLevel.HIGH
+    assert "标题编号重复" in result[2].reasons
+    assert result[3].risk == RiskLevel.HIGH
+    assert "同级标题编号不连续" in result[3].reasons

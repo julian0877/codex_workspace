@@ -1,5 +1,6 @@
 from pathlib import Path
 from zipfile import BadZipFile
+import re
 
 from docx import Document
 from docx.opc.exceptions import PackageNotFoundError
@@ -58,6 +59,21 @@ def analyze_docx(path: Path) -> DocumentAnalysis:
 
     paragraphs = [_extract_paragraph(paragraph) for paragraph in document.paragraphs]
     image_count = len(document.part.element.xpath(".//a:blip"))
+    warnings: list[str] = []
+    caption_count = sum(
+        bool(re.match(r"^图\s*\d+(?:[.-]\d+)*\s+", item.text.strip()))
+        for item in paragraphs
+    )
+    if image_count > caption_count:
+        warnings.append("存在未配置题注的图片")
+    if document.part.element.xpath(".//wp:anchor"):
+        warnings.append("存在浮动图片，需要人工复核")
+    if any(section.page_width > section.page_height for section in document.sections):
+        warnings.append("存在横向页面，分节格式需要人工复核")
+    if any(cell.tables for table in document.tables for row in table.rows for cell in row.cells):
+        warnings.append("存在嵌套表格，需要人工复核")
+    if document.part.element.xpath(".//w:gridSpan | .//w:vMerge"):
+        warnings.append("存在合并单元格，需要人工复核")
     return DocumentAnalysis(
         source=path,
         paragraphs=paragraphs,
@@ -65,4 +81,5 @@ def analyze_docx(path: Path) -> DocumentAnalysis:
         table_count=len(document.tables),
         image_count=image_count,
         section_count=len(document.sections),
+        structure_warnings=warnings,
     )
