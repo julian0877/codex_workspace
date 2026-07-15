@@ -41,3 +41,11 @@ def make_mixed_docx(path: Path) -> Path:
     document.save(path)
     image_path.unlink()
     return path
+
+
+def make_cover_docx(path: Path, text: str) -> Path:
+    document = Document()
+    for line in text.splitlines():
+        document.add_paragraph(line)
+    document.save(path)
+    return path
